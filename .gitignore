@@ -18,6 +18,7 @@ cmd/core-data/core-data
 cmd/core-metadata/core-metadata
 cmd/export-client/export-client
 cmd/export-distro/export-distro
+cmd/security-default-kdf/security-default-kdf
 cmd/security-secrets-setup/security-secrets-setup
 cmd/security-proxy-setup/security-proxy-setup
 cmd/support-logging/support-logging
