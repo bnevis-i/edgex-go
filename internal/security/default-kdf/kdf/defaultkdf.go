@@ -28,8 +28,8 @@ import (
 const saltLength = 32
 const saltFile string = "kdf-salt.dat"
 
-// fileInterface implements a unit testing hook for file IO
-type fileInterface interface {
+// file implements a unit testing hook for file IO
+type file interface {
 	io.Reader
 	io.Closer
 	io.WriterAt
@@ -37,7 +37,7 @@ type fileInterface interface {
 
 // defaultKdf stores instance data for the default KDF
 type defaultKdf struct {
-	fileOpener      func(name string, flag int, perm os.FileMode) (fileInterface, error)
+	fileOpener      func(name string, flag int, perm os.FileMode) (file, error)
 	persistencePath string
 	hashConstructor func() hash.Hash
 }
@@ -48,24 +48,24 @@ func NewDefaultKdf(persistencePath string, hashConstructor func() hash.Hash) Key
 }
 
 // defaultFileOpener just opens the file using normal IO
-func defaultFileOpener(name string, flag int, perm os.FileMode) (fileInterface, error) {
+func defaultFileOpener(name string, flag int, perm os.FileMode) (file, error) {
 	return os.OpenFile(name, flag, perm)
 }
 
 // setFileOpener is a test/DI hook to avoid real IO during unit testing
-func (kdf *defaultKdf) setFileOpener(fileOpener func(name string, flag int, perm os.FileMode) (fileInterface, error)) {
+func (kdf *defaultKdf) setFileOpener(fileOpener func(name string, flag int, perm os.FileMode) (file, error)) {
 	kdf.fileOpener = fileOpener
 }
 
 // DeriveKey returns derived key material of specified length
-func (kdf *defaultKdf) DeriveKey(ikm []byte, keylen uint, info string) ([]byte, error) {
+func (kdf *defaultKdf) DeriveKey(ikm []byte, keyLen uint, info string) ([]byte, error) {
 	salt, err := kdf.initializeSalt()
 	if err != nil {
 		return nil, err
 	}
 	infoBytes := []byte(info)
 	kdfreader := hkdf.New(kdf.hashConstructor, ikm, salt, infoBytes)
-	key := make([]byte, keylen)
+	key := make([]byte, keyLen)
 	kdfreader.Read(key)
 	return key, nil
 }

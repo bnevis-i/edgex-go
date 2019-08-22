@@ -18,5 +18,7 @@ package kdf
 // KeyDeriver is the interface that the main program expects
 // for returning a derived key
 type KeyDeriver interface {
-	DeriveKey(ikm []byte, keylen uint, info string) ([]byte, error)
+	// DeriveKey returns a byte array that is of keyLen length and
+	// an error if errors where encountered while deriving the key
+	DeriveKey(ikm []byte, keylkeyLen uint, info string) ([]byte, error)
 }

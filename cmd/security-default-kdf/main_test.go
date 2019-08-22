@@ -25,15 +25,12 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/security/default-kdf/kdf"
 	"github.com/edgexfoundry/edgex-go/internal/security/pipedhexreader"
 	"github.com/stretchr/testify/assert"
+	//"github.com/stretchr/testify/mock"
 )
 
-func setupTest(t *testing.T) func(t *testing.T, args []string) {
-	exitInstance = newTestExit()
-	return func(t *testing.T, args []string) {
-		// reset after each test
-		os.Args = args
-	}
-}
+const exectedInfo = "info"
+const expectedKeyLen = 32
+const expectedOutputKey = "1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df"
 
 type testExitCode struct {
 	testStatusCode int
@@ -51,113 +48,85 @@ func (testExit *testExitCode) getStatusCode() int {
 	return testExit.testStatusCode
 }
 
+var oldArgs []string
+var oldStdout, oldStderr *os.File
+var stdoutReader, stdoutWriter *os.File
+var stderrReader, stderrWriter *os.File
+var stdoutCapture, stderrCapture bytes.Buffer
+
+func setUp(t *testing.T) {
+	exitInstance = newTestExit()
+	oldArgs, oldStdout, oldStderr = os.Args, os.Stdout, os.Stderr
+	stdoutReader, stdoutWriter, _ = os.Pipe()
+	stderrReader, stderrWriter, _ = os.Pipe()
+	os.Stdout, os.Stderr = stdoutWriter, stderrWriter
+	stdoutCapture.Reset()
+	stderrCapture.Reset()
+}
+
+func tearDown(t *testing.T) {
+	stdoutWriter.Close()
+	stderrWriter.Close()
+	io.Copy(&stdoutCapture, stdoutReader)
+	io.Copy(&stderrCapture, stderrReader)
+	os.Args, os.Stdout, os.Stderr = oldArgs, oldStdout, oldStderr
+}
+
 func TestNoOption(t *testing.T) {
-	tearDown := setupTest(t)
-	origArgs := os.Args
-	defer tearDown(t, origArgs)
 	assert := assert.New(t)
 
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	r2, w2, _ := os.Pipe()
-	os.Stdout = w
-	os.Stderr = w2
+	setUp(t)
 
 	os.Args = []string{"cmd"}
 	main()
 
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-	w.Close()
-	w2.Close()
+	tearDown(t)
 
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
-
-	var stdoutCapture, stderrCapture bytes.Buffer
-	io.Copy(&stdoutCapture, r)
-	io.Copy(&stderrCapture, r2)
-	assert.Equal("ERROR: -pstoredir is a required option\n", stderrCapture.String())
+	assert.Equal("ERROR: -persistdir is a required option\n", stderrCapture.String())
 }
 
 func TestBadHalg(t *testing.T) {
-	tearDown := setupTest(t)
-	origArgs := os.Args
-	defer tearDown(t, origArgs)
 	assert := assert.New(t)
 
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	r2, w2, _ := os.Pipe()
-	os.Stdout = w
-	os.Stderr = w2
+	setUp(t)
 
-	os.Args = []string{"cmd", "-pstoredir", ".", "-halg", "sha1"}
+	os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha1"}
 	main()
 
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-	w.Close()
-	w2.Close()
+	tearDown(t)
 
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
-
-	var stdoutCapture, stderrCapture bytes.Buffer
-	io.Copy(&stdoutCapture, r)
-	io.Copy(&stderrCapture, r2)
-	assert.Equal("ERROR: -halg must be \"sha256\"\n", stderrCapture.String())
+	assert.Equal("ERROR: -hashalg must be \"sha256\"\n", stderrCapture.String())
 }
 
 func TestNoInfo(t *testing.T) {
-	tearDown := setupTest(t)
-	origArgs := os.Args
-	defer tearDown(t, origArgs)
 	assert := assert.New(t)
 
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	r2, w2, _ := os.Pipe()
-	os.Stdout = w
-	os.Stderr = w2
+	setUp(t)
 
-	os.Args = []string{"cmd", "-pstoredir", ".", "-halg", "sha256"}
+	os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha256"}
 	main()
 
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-	w.Close()
-	w2.Close()
+	tearDown(t)
 
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
-
-	var stdoutCapture, stderrCapture bytes.Buffer
-	io.Copy(&stdoutCapture, r)
-	io.Copy(&stderrCapture, r2)
 	assert.Equal("ERROR: An \"info\" argument is required as input to the KDF\n", stderrCapture.String())
 }
 
 // TestNoError runs a mocked IKM and mocked KDF and
 // just makes sure submain() calls the right stuff
 func TestNoError(t *testing.T) {
-	tearDown := setupTest(t)
-	origArgs := os.Args
-	defer tearDown(t, origArgs)
 	assert := assert.New(t)
 
-	r, w, _ := os.Pipe()
+	setUp(t)
 
-	exitCode, err := submain(newMockPipedHexReader(t), newMockKeyDeriver(t), "", 32, w, "info")
+	err := kdfExecutorArgs{newMockPipedHexReader(t), newMockKeyDeriver(t), "", expectedKeyLen, exectedInfo}.outputDerivedKey(os.Stdout)
 
-	w.Close()
+	tearDown(t)
 
 	assert.Nil(err)
-	assert.Equal(0, exitCode)
-
-	var stdoutCapture bytes.Buffer
-	io.Copy(&stdoutCapture, r)
-	assert.Equal("1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df", stdoutCapture.String())
+	assert.Equal(expectedOutputKey, stdoutCapture.String())
 }
 
 //
@@ -202,10 +171,10 @@ func newMockKeyDeriver(t *testing.T) kdf.KeyDeriver {
 	return &mockKeyDeriver{t}
 }
 
-func (kdf *mockKeyDeriver) DeriveKey(ikm []byte, keylen uint, info string) ([]byte, error) {
-	assert.Equal(kdf.t, uint(32), keylen)
+func (kdf *mockKeyDeriver) DeriveKey(ikm []byte, keyLen uint, info string) ([]byte, error) {
+	assert.Equal(kdf.t, uint(expectedKeyLen), keyLen)
 	assert.Equal(kdf.t, make([]byte, 32), ikm)
-	assert.Equal(kdf.t, "info", info)
-	bytes, _ := hex.DecodeString("1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df")
+	assert.Equal(kdf.t, exectedInfo, info)
+	bytes, _ := hex.DecodeString(expectedOutputKey)
 	return bytes, nil
 }

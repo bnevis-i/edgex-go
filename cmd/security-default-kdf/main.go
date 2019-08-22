@@ -27,44 +27,55 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal/security/pipedhexreader"
 )
 
-const defaultKeylen uint = 32
+// Constants
+
+const defaultkeyLen uint = 32
+const defaultShaAlgorithm string = "sha256"
 const defaultIkmHook string = "security-default-ikm"
+
+// Dependencies
 
 var exitInstance = newExit()
 var hashConstructor = sha256.New
+
+// Flag variables
+
 var helpOpt bool
 var persistencePath string
 var hashAlg string
-var keylen uint
+var keyLen uint
 var info string
 
+// define and register command line flags
 func init() {
-	// define and register command line flags:
 	flag.BoolVar(&helpOpt, "h", false, "help message")
 	flag.BoolVar(&helpOpt, "help", false, "help message")
-	flag.StringVar(&persistencePath, "pstoredir", "", "Path for storing data to be preserved across reboots")
-	flag.StringVar(&hashAlg, "halg", "sha256", "Hash algorithm to be used in key derivation function (\"sha256\")")
-	flag.UintVar(&keylen, "l", defaultKeylen, "Length of output key in octets")
+	flag.StringVar(&persistencePath, "persistdir", "", "Path for storing data to be preserved across reboots")
+	flag.StringVar(&hashAlg, "hashalg", "sha256", "Hash algorithm to be used in key derivation function (\"sha256\")")
+	flag.UintVar(&keyLen, "length", defaultkeyLen, "Length of output key in octets")
 }
 
-func submain(ikmHandler pipedhexreader.PipedHexReader,
-	kdf kdf.KeyDeriver,
-	ikmHook string,
-	keylen uint,
-	stdout io.StringWriter,
-	info string) (int, error) {
+type kdfExecutorArgs struct {
+	ikmHandler pipedhexreader.PipedHexReader
+	kdf        kdf.KeyDeriver
+	ikmHook    string
+	keyLen     uint
+	info       string
+}
 
-	ikm, err := ikmHandler.ReadHexBytesFromExe(ikmHook, []string{})
+func (arg kdfExecutorArgs) outputDerivedKey(writer io.StringWriter) error {
+
+	ikm, err := arg.ikmHandler.ReadHexBytesFromExe(arg.ikmHook, []string{})
 	if err != nil {
-		return 1, err
+		return err
 	}
-	key, err := kdf.DeriveKey(ikm, keylen, info)
+	key, err := arg.kdf.DeriveKey(ikm, arg.keyLen, arg.info)
 	if err != nil {
-		return 1, err
+		return err
 	}
 	keyOctets := hex.EncodeToString(key)
-	stdout.WriteString(keyOctets)
-	return 0, nil
+	writer.WriteString(keyOctets)
+	return nil
 }
 
 func main() {
@@ -81,12 +92,12 @@ func main() {
 		return
 	}
 	if persistencePath == "" {
-		fmt.Fprintln(os.Stderr, "ERROR: -pstoredir is a required option")
+		fmt.Fprintln(os.Stderr, "ERROR: -persistdir is a required option")
 		exitInstance.callExit(1)
 		return
 	}
-	if hashAlg != "sha256" {
-		fmt.Fprintln(os.Stderr, "ERROR: -halg must be \"sha256\"")
+	if hashAlg != defaultShaAlgorithm {
+		fmt.Fprintln(os.Stderr, "ERROR: -hashalg must be \"sha256\"")
 		exitInstance.callExit(1)
 		return
 	}
@@ -98,12 +109,16 @@ func main() {
 
 	pipedHexReader := pipedhexreader.NewPipedHexReader()
 	defaultKdf := kdf.NewDefaultKdf(persistencePath, hashConstructor)
-	exitcode, err := submain(pipedHexReader, defaultKdf, ikmHook, keylen, os.Stdout, info)
-	os.Stdout.Close()
+
+	err := kdfExecutorArgs{pipedHexReader, defaultKdf, ikmHook, keyLen, info}.outputDerivedKey(os.Stdout)
+
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		exitInstance.callExit(1)
+		return
 	}
-	exitInstance.callExit(exitcode)
+
+	exitInstance.callExit(0)
 }
 
 type exit interface {

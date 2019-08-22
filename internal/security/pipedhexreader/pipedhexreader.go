@@ -25,7 +25,7 @@ import (
 )
 
 // pipedHexReader stores instance data for the pipedhexreader
-type pipedHexReader struct { }
+type pipedHexReader struct{}
 
 // NewPipedHexReader creates a new PipedHexReader
 func NewPipedHexReader() PipedHexReader {
@@ -34,7 +34,11 @@ func NewPipedHexReader() PipedHexReader {
 
 // ReadHexBytesFromExe see interface.go
 func (phr *pipedHexReader) ReadHexBytesFromExe(executable string, args []string) ([]byte, error) {
-	cmd := exec.Command(executable, args...)
+	sanitizedExecutable, err := exec.LookPath(executable)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(sanitizedExecutable, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

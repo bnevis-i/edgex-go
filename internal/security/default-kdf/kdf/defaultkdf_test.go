@@ -27,12 +27,12 @@ import (
 // TestDefaultKdf tests the default implementation
 func TestDefaultKdf(t *testing.T) {
 	// Arrange
-	keyDeriver := NewDefaultKdf(".", sha256.New, make([]byte, 32))
+	keyDeriver := NewDefaultKdf(".", sha256.New)
 	(keyDeriver.(*defaultKdf)).setFileOpener(mockFileOpener) // internal method
 	expected, _ := hex.DecodeString("1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df")
 
 	// Act
-	key, err := keyDeriver.DeriveKey(32, "info")
+	key, err := keyDeriver.DeriveKey(make([]byte, 32), 32, "info")
 
 	// Assert
 	assert.Nil(t, err)
@@ -43,7 +43,7 @@ func TestDefaultKdf(t *testing.T) {
 // Mock opening and reading of the seed file
 //
 
-func mockFileOpener(name string, flag int, perm os.FileMode) (fileInterface, error) {
+func mockFileOpener(name string, flag int, perm os.FileMode) (file, error) {
 	return &mockSeedFile{}, nil
 }
 
