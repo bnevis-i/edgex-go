@@ -12,12 +12,15 @@
  * the License.
  *
  * @author: Tingyu Zeng, Dell
+ * @version: 1.1.0
  *******************************************************************************/
 package proxy
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -80,14 +83,19 @@ func TestCreate(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	host, port, err := parseHostAndPort(ts, t)
+	parsed, err := url.Parse(ts.URL)
 	if err != nil {
-		t.Error(err.Error())
+		t.Errorf("unable to parse test server URL %s", ts.URL)
+		return
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Errorf("parsed port number cannot be converted to int %s", parsed.Port())
 		return
 	}
 	Configuration = &ConfigurationStruct{}
 	Configuration.KongURL = KongUrlInfo{
-		Server:    host,
+		Server:    parsed.Hostname(),
 		AdminPort: port,
 	}
 
@@ -114,15 +122,19 @@ func TestAssociateWithGroup(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	host, port, err := parseHostAndPort(ts, t)
+	parsed, err := url.Parse(ts.URL)
 	if err != nil {
-		t.Error(err.Error())
+		t.Errorf("unable to parse test server URL %s", ts.URL)
 		return
 	}
-
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Errorf("parsed port number cannot be converted to int %s", parsed.Port())
+		return
+	}
 	Configuration = &ConfigurationStruct{}
 	Configuration.KongURL = KongUrlInfo{
-		Server:    host,
+		Server:    parsed.Hostname(),
 		AdminPort: port,
 	}
 
@@ -150,15 +162,19 @@ func TestCreateJWTToken(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	host, port, err := parseHostAndPort(ts, t)
+	parsed, err := url.Parse(ts.URL)
 	if err != nil {
-		t.Error(err.Error())
+		t.Errorf("unable to parse test server URL %s", ts.URL)
 		return
 	}
-
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Errorf("parsed port number cannot be converted to int %s", parsed.Port())
+		return
+	}
 	Configuration = &ConfigurationStruct{}
 	Configuration.KongURL = KongUrlInfo{
-		Server:    host,
+		Server:    parsed.Hostname(),
 		AdminPort: port,
 	}
 

@@ -13,7 +13,7 @@
  *
  *******************************************************************************/
 
-package proxy
+package secretstore
 
 import (
 	"fmt"
@@ -25,11 +25,7 @@ import (
 type ConfigurationStruct struct {
 	Writable      WritableInfo
 	Logging       config.LoggingInfo
-	KongURL       KongUrlInfo
-	KongAuth      KongAuthInfo
-	KongACL       KongAclInfo
 	SecretService SecretServiceInfo
-	Clients       map[string]config.ClientInfo
 }
 
 type WritableInfo struct {
@@ -37,48 +33,23 @@ type WritableInfo struct {
 	Title    string
 }
 
-type KongUrlInfo struct {
-	Server             string
-	AdminPort          int
-	AdminPortSSL       int
-	ApplicationPort    int
-	ApplicationPortSSL int
-}
-
-func (k KongUrlInfo) GetProxyBaseURL() string {
-	url := &url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("%s:%v", k.Server, k.AdminPort),
-		Path:   "/",
-	}
-	return url.String()
-}
-
-type KongAuthInfo struct {
-	Name       string
-	TokenTTL   int
-	Resource   string
-	OutputPath string
-}
-
-type KongAclInfo struct {
-	Name      string
-	WhiteList string
-}
-
 type SecretServiceInfo struct {
-	Server          string
-	Port            int
-	HealthcheckPath string
-	CertPath        string
-	TokenPath       string
-	CACertPath      string
-	SNIS            string
+	Scheme               string
+	Server               string
+	Port                 int
+	CertPath             string
+	CaFilePath           string
+	CertFilePath         string
+	KeyFilePath          string
+	TokenFolderPath      string
+	TokenFile            string
+	VaultSecretShares    int
+	VaultSecretThreshold int
 }
 
 func (s SecretServiceInfo) GetSecretSvcBaseURL() string {
 	url := &url.URL{
-		Scheme: "https",
+		Scheme: s.Scheme,
 		Host:   fmt.Sprintf("%s:%v", s.Server, s.Port),
 		Path:   "/",
 	}

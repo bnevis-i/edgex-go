@@ -12,6 +12,7 @@
  * the License.
  *
  * @author: Tingyu Zeng, Dell
+ * @version: 1.1.0
  *******************************************************************************/
 package proxy
 
@@ -43,6 +44,10 @@ type KongServiceResponse struct {
 type KongRoute struct {
 	Paths []string `json:"paths,omitempty"`
 	Name  string   `json:"name,omitempty"`
+}
+
+type KongJWTPlugin struct {
+	Name string `url:"name,omitempty"`
 }
 
 type KongOAuth2Plugin struct {

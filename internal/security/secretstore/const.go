@@ -14,17 +14,15 @@
  * @author: Tingyu Zeng, Dell
  * @version: 1.1.0
  *******************************************************************************/
-package proxy
+package secretstore
 
 const (
-	ServicesPath     = "services/"
-	RoutesPath       = "routes/"
-	ConsumersPath    = "consumers/"
 	CertificatesPath = "certificates/"
-	PluginsPath      = "plugins/"
 	SecurityService  = "securityservice"
-	EdgeXKong        = "edgex-kong"
+	EdgeXService     = "edgex"
 	VaultToken       = "X-Vault-Token"
-	OAuth2GrantType  = "client_credentials"
-	OAuth2Scopes     = "all"
+	VaultHealthAPI   = "/v1/sys/health"
+	VaultInitAPI     = "/v1/sys/init"
+	VaultUnsealAPI   = "/v1/sys/unseal"
+	JsonContentType  = "application/json"
 )

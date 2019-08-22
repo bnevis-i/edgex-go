@@ -12,12 +12,15 @@
  * the License.
  *
  * @author: Tingyu Zeng, Dell
+ * @version: 1.1.0
  *******************************************************************************/
 package proxy
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/edgexfoundry/go-mod-core-contracts/clients/logger"
@@ -32,7 +35,7 @@ func TestDelete(t *testing.T) {
 			t.Errorf("expected DELETE request, got %s instead", r.Method)
 		}
 
-		if r.URL.EscapedPath() != "/services/1" {
+		if r.URL.EscapedPath() != "/1" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -40,16 +43,21 @@ func TestDelete(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	host, port, err := parseHostAndPort(ts, t)
+	parsed, err := url.Parse(ts.URL)
 	if err != nil {
-		t.Error(err.Error())
+		t.Errorf("unable to parse test server URL %s", ts.URL)
+		return
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Errorf("parsed port number cannot be converted to int %s", parsed.Port())
 		return
 	}
 
 	client := &http.Client{}
 	cfgOK := ConfigurationStruct{}
 	cfgOK.KongURL = KongUrlInfo{
-		Server:    host,
+		Server:    parsed.Hostname(),
 		AdminPort: port,
 	}
 

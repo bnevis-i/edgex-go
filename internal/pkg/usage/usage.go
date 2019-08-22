@@ -62,9 +62,18 @@ Server Options:
 	--group=<groupname>             Group name the user belongs to
 	--userdel=<username>            Delete an account		
 	--configfile=<file.toml>        Use a different config file (default: res/configuration.toml)
-
-Common Options:
+	Common Options:
 	-h, --help                      Show this message
+`
+var securitySecretStoreSetupUsageStr = `
+Usage: %s [options]
+Server Options:	
+	--insureskipverify=true/false			Indicates if skipping the server side SSL cert verifcation, similar to -k of curl
+	--init=true/false				Indicates if security service should be initialized	
+	--configfile=<file.toml>			Use a different config file (default: res/configuration.toml)
+	--wait=<time in seconds>		Indicates how long the program will pause between the vault initialization until it succeeds	
+	Common Options:
+	-h, --help					Show this message
 `
 
 // usage will print out the flag options for the server.
@@ -88,6 +97,12 @@ func HelpCallbackSecuritySetup() {
 
 func HelpCallbackSecurityProxy() {
 	msg := fmt.Sprintf(securityProxySetupUsageStr, os.Args[0])
+	fmt.Printf("%s\n", msg)
+	os.Exit(0)
+}
+
+func HelpCallbackSecuritySecretStore() {
+	msg := fmt.Sprintf(securitySecretStoreSetupUsageStr, os.Args[0])
 	fmt.Printf("%s\n", msg)
 	os.Exit(0)
 }

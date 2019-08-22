@@ -14,10 +14,12 @@
  * @author: Tingyu Zeng, Dell
  * @version: 1.1.0
  *******************************************************************************/
-package proxy
+package secretstore
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -29,6 +31,24 @@ type Requestor interface {
 func NewRequestor(skipVerify bool) Requestor {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify},
+	}
+	if skipVerify == false {
+		caCert, err := ioutil.ReadFile(Configuration.SecretService.CaFilePath)
+		if err != nil {
+			LoggingClient.Error("failed to load rootCA certificate.")
+			return nil
+		}
+		LoggingClient.Info("successful loading the rootCA certificate.")
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:            caCertPool,
+				InsecureSkipVerify: skipVerify,
+			},
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
 	}
 	return &http.Client{Timeout: 10 * time.Second, Transport: tr}
 }
