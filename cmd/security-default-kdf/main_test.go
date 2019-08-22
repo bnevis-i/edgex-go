@@ -22,13 +22,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/edgexfoundry/edgex-go/internal/security/default-kdf/kdf"
-	"github.com/edgexfoundry/edgex-go/internal/security/pipedhexreader"
 	"github.com/stretchr/testify/assert"
-	//"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/mock"
 )
 
-const exectedInfo = "info"
+const expectedInfo = "info"
 const expectedKeyLen = 32
 const expectedOutputKey = "1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df"
 
@@ -121,9 +119,18 @@ func TestNoError(t *testing.T) {
 
 	setUp(t)
 
-	err := kdfExecutorArgs{newMockPipedHexReader(t), newMockKeyDeriver(t), "", expectedKeyLen, exectedInfo}.outputDerivedKey(os.Stdout)
+	mockedHexReader := &mockPipedHexReader{}
+	mockedKeyDeriver := &mockKeyDeriver{}
+
+	mockedHexReader.On("ReadHexBytesFromExe", "", []string{}).Return(make([]byte, 32), nil)
+	mockedKeyDeriver.On("DeriveKey", make([]byte, 32), uint(expectedKeyLen), expectedInfo).Return(hex.DecodeString(expectedOutputKey))
+
+	err := kdfExecutorArgs{mockedHexReader, mockedKeyDeriver, "", expectedKeyLen, expectedInfo}.outputDerivedKey(os.Stdout)
 
 	tearDown(t)
+
+	mockedHexReader.AssertExpectations(t)
+	mockedKeyDeriver.AssertExpectations(t)
 
 	assert.Nil(err)
 	assert.Equal(expectedOutputKey, stdoutCapture.String())
@@ -133,48 +140,23 @@ func TestNoError(t *testing.T) {
 // testing mocks - eliminate dependency on IKM_HOOK
 //
 
-type mockStringWriter struct {
-	t *testing.T
-}
-
-func newMockStringWriter(t *testing.T) io.StringWriter {
-	return &mockStringWriter{t}
-}
-
-func (wc *mockStringWriter) WriteString(s string) (n int, err error) {
-	assert.Equal(wc.t, "1060e4e72054653bf46623844033f5ccc9cff596a4a680e074ef4fd06aae60df", s)
-	return len(s), nil
-}
-
-func (wc *mockStringWriter) Close() error {
-	return nil
-}
-
 type mockPipedHexReader struct {
-	t *testing.T
-}
-
-func newMockPipedHexReader(t *testing.T) pipedhexreader.PipedHexReader {
-	return &mockPipedHexReader{t}
+	mock.Mock
 }
 
 // ReadHexBytesFromExe see interface.go
 func (phr *mockPipedHexReader) ReadHexBytesFromExe(executable string, args []string) ([]byte, error) {
-	return make([]byte, 32), nil
+	// Boilerplate that returns whatever Mock.On().Returns() is configured for
+	arguments := phr.Called(executable, args)
+	return arguments.Get(0).([]byte), arguments.Error(1)
 }
 
 type mockKeyDeriver struct {
-	t *testing.T
-}
-
-func newMockKeyDeriver(t *testing.T) kdf.KeyDeriver {
-	return &mockKeyDeriver{t}
+	mock.Mock
 }
 
 func (kdf *mockKeyDeriver) DeriveKey(ikm []byte, keyLen uint, info string) ([]byte, error) {
-	assert.Equal(kdf.t, uint(expectedKeyLen), keyLen)
-	assert.Equal(kdf.t, make([]byte, 32), ikm)
-	assert.Equal(kdf.t, exectedInfo, info)
-	bytes, _ := hex.DecodeString(expectedOutputKey)
-	return bytes, nil
+	// Boilerplate that returns whatever Mock.On().Returns() is configured for
+	arguments := kdf.Called(ikm, keyLen, info)
+	return arguments.Get(0).([]byte), arguments.Error(1)
 }
