@@ -43,7 +43,7 @@ func TestGetAccessToken(t *testing.T) {
 		t.Errorf("failed to parse token file")
 		t.Errorf(err.Error())
 	}
-	if s != "test-token" {
+	if s != "s.83AOgsQcSyqhp5OlfMYNj1bh" {
 		t.Errorf("incorrect token")
 		t.Errorf(s)
 	}

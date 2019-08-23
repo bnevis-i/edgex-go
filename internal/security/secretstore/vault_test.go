@@ -41,7 +41,7 @@ func TestHealthCheck(t *testing.T) {
 	defer ts.Close()
 
 	host := strings.Replace(ts.URL, "https://", "", -1)
-	vc := NewVaultClient(NewRequestor(true), "https", host)
+	vc := NewVaultClient(newMockPipedHexReader(), NewRequestor(true), "https", host)
 	code, _ := vc.HealthCheck()
 
 	if code != http.StatusOK {
@@ -56,12 +56,12 @@ func TestInit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{
 			"keys": [
-			  "test-keys"
+			  "66c45ff15d7cf08275a0cbcb78f22d25256bd429f1805ff7e082715be55d194d"
 			],
 			"keys_base64": [
-			  "test-keys-base64"
+			  "NjZjNDVmZjE1ZDdjZjA4Mjc1YTBjYmNiNzhmMjJkMjUyNTZiZDQyOWYxODA1ZmY3ZTA4MjcxNWJlNTVkMTk0ZA=="
 			],
-			"root_token": "test-root-token"
+			"root_token": "s.83AOgsQcSyqhp5OlfMYNj1bh"
 		}
 		`))
 		if r.Method != "POST" {
@@ -81,7 +81,7 @@ func TestInit(t *testing.T) {
 	}
 
 	host := strings.Replace(ts.URL, "https://", "", -1)
-	vc := NewVaultClient(NewRequestor(true), "https", host)
+	vc := NewVaultClient(newMockPipedHexReader(), NewRequestor(true), "https", host)
 	code, _ := vc.Init()
 	if code != http.StatusOK {
 		t.Errorf("incorrect vault init status. The returned code is %d", code)
@@ -112,9 +112,23 @@ func TestUnseal(t *testing.T) {
 	}
 
 	host := strings.Replace(ts.URL, "https://", "", -1)
-	vc := NewVaultClient(NewRequestor(true), "https", host)
+	vc := NewVaultClient(newMockPipedHexReader(), NewRequestor(true), "https", host)
 	code, err := vc.Unseal()
 	if code != http.StatusOK {
 		t.Errorf("incorrect vault unseal status. The returned code is %d, %s", code, err.Error())
 	}
+}
+
+//
+// Test mocks
+//
+
+type mockPipedHexReader struct{}
+
+func newMockPipedHexReader() *mockPipedHexReader {
+	return &mockPipedHexReader{}
+}
+
+func (*mockPipedHexReader) ReadHexBytesFromExe(executable string, args []string) ([]byte, error) {
+	return make([]byte, 32), nil
 }

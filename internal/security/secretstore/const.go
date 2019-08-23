@@ -17,12 +17,14 @@
 package secretstore
 
 const (
-	CertificatesPath = "certificates/"
-	SecurityService  = "securityservice"
-	EdgeXService     = "edgex"
-	VaultToken       = "X-Vault-Token"
-	VaultHealthAPI   = "/v1/sys/health"
-	VaultInitAPI     = "/v1/sys/init"
-	VaultUnsealAPI   = "/v1/sys/unseal"
-	JsonContentType  = "application/json"
+	CertificatesPath     = "certificates/"
+	SecurityService      = "securityservice"
+	EdgeXService         = "edgex"
+	VaultToken           = "X-Vault-Token"
+	VaultHealthAPI       = "/v1/sys/health"
+	VaultInitAPI         = "/v1/sys/init"
+	VaultUnsealAPI       = "/v1/sys/unseal"
+	JsonContentType      = "application/json"
+	PersistDirKdfOption  = "-persistdir"
+	defaultKdfExecutable = "security-defaut-kdf"
 )

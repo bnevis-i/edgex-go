@@ -18,12 +18,21 @@ package secretstore
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
+
+	"github.com/edgexfoundry/edgex-go/internal/security/pipedhexreader"
 )
 
 // InitRequest contains a Vault init request regarding the Shamir Secret Sharing (SSS) parameters
@@ -34,9 +43,11 @@ type InitRequest struct {
 
 // InitResponse contains a Vault init response
 type InitResponse struct {
-	Keys       []string `json:"keys"`
-	KeysBase64 []string `json:"keys_base64"`
-	RootToken  string   `json:"root_token"`
+	Keys          []string `json:"keys"`
+	KeysBase64    []string `json:"keys_base64"`
+	EncryptedKeys []string `json:"encrypted_keys"`
+	Nonces        []string `json:"nonces"`
+	RootToken     string   `json:"root_token"`
 }
 
 // UnsealRequest contains a Vault unseal request
@@ -54,17 +65,23 @@ type UnsealResponse struct {
 }
 
 type VaultClient struct {
-	client Requestor
-	scheme string
-	host   string
+	pipedhexreader pipedhexreader.PipedHexReader
+	client         Requestor
+	scheme         string
+	host           string
 }
 
-func NewVaultClient(r Requestor, s string, h string) VaultClient {
+func NewVaultClient(phr pipedhexreader.PipedHexReader, r Requestor, s string, h string) VaultClient {
 	return VaultClient{
-		client: r,
-		scheme: s,
-		host:   h,
+		pipedhexreader: phr,
+		client:         r,
+		scheme:         s,
+		host:           h,
 	}
+}
+
+func (vc *VaultClient) setPipedHexHeader(pipedhexreader pipedhexreader.PipedHexReader) {
+	vc.pipedhexreader = pipedhexreader
 }
 
 func (vc *VaultClient) HealthCheck() (statusCode int, err error) {
@@ -128,7 +145,19 @@ func (vc *VaultClient) Init() (statusCode int, err error) {
 		return 0, err
 	}
 
-	err = ioutil.WriteFile(filepath.Join(Configuration.SecretService.TokenFolderPath, Configuration.SecretService.TokenFile), body, 0600)
+	err = vc.encryptVaultMasterKey(&initResp)
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed encrypt vault master key %s", err.Error()))
+		return 0, err
+	}
+
+	remarshaledBody, err := json.Marshal(initResp)
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed remarshal Vault init response %s", err.Error()))
+		return 0, err
+	}
+
+	err = ioutil.WriteFile(filepath.Join(Configuration.SecretService.TokenFolderPath, Configuration.SecretService.TokenFile), remarshaledBody, 0600)
 	if err != nil {
 		LoggingClient.Error(fmt.Sprintf("failed to create Vault init response %s file, HTTP status: %s", Configuration.SecretService.TokenFolderPath+"/"+Configuration.SecretService.TokenFile, err.Error()))
 		return 0, err
@@ -156,6 +185,16 @@ func (vc *VaultClient) Unseal() (statusCode int, err error) {
 		Scheme: vc.scheme,
 		Host:   vc.host,
 		Path:   VaultUnsealAPI,
+	}
+
+	var encryptedConfig = (initResp.KeysBase64 == nil)
+
+	if encryptedConfig {
+		err = vc.decryptVaultMasterKey(&initResp)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed decrypt vault master key %s", err.Error()))
+			return 0, err
+		}
 	}
 
 	keyCounter := 1
@@ -201,4 +240,125 @@ func (vc *VaultClient) Unseal() (statusCode int, err error) {
 		keyCounter++
 	}
 	return 0, fmt.Errorf("%d", 1)
+}
+
+// Use a derived key to encrypt Keys and save as EncryptedKeysBase64
+func (vc *VaultClient) encryptVaultMasterKey(initResp *InitResponse) error {
+
+	key, err := vc.obtainAESKey()
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to obtain encryption key %s", err.Error()))
+		return err
+	}
+
+	newKeys := make([]string, len(initResp.Keys))
+	newNonces := make([]string, len(initResp.Keys))
+
+	for i, hexPlaintext := range initResp.Keys {
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize block cipher %s", err.Error()))
+			return err
+		}
+
+		aesgcm, err := cipher.NewGCM(block)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize AES cipher %s", err.Error()))
+			return err
+		}
+
+		nonce := make([]byte, aesgcm.NonceSize())
+		if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize random nonce %s", err.Error()))
+			return err
+		}
+
+		plaintext, err := hex.DecodeString(hexPlaintext)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of keyshare (details omitted)"))
+			return err
+		}
+
+		ciphertext := aesgcm.Seal(nil, nonce, plaintext, nil)
+
+		newKeys[i] = hex.EncodeToString(ciphertext)
+		newNonces[i] = hex.EncodeToString(nonce)
+	}
+
+	initResp.EncryptedKeys = newKeys
+	initResp.Nonces = newNonces
+	initResp.Keys = nil
+	initResp.KeysBase64 = nil
+	return nil
+}
+
+// Use a derived key to decrypt EncryptedKeysBase64 and resore Keys and
+// EncryptedKeysBase64 to be fed back to the Vault unseal API
+func (vc *VaultClient) decryptVaultMasterKey(initResp *InitResponse) error {
+
+	key, err := vc.obtainAESKey()
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to obtain decryption key %s", err.Error()))
+		return err
+	}
+
+	newKeys := make([]string, len(initResp.EncryptedKeys))
+	newKeysBase64 := make([]string, len(initResp.EncryptedKeys))
+
+	for i, hexCiphertext := range initResp.EncryptedKeys {
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize block cipher %s", err.Error()))
+			return err
+		}
+
+		aesgcm, err := cipher.NewGCM(block)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize AES cipher %s", err.Error()))
+			return err
+		}
+
+		hexNonce := initResp.Nonces[i]
+		nonce, err := hex.DecodeString(hexNonce)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of nonce %s", err.Error()))
+			return err
+		}
+
+		ciphertext, err := hex.DecodeString(hexCiphertext)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of ciphertext"))
+			return err
+		}
+
+		plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
+
+		newKeys[i] = hex.EncodeToString(plaintext)
+		newKeysBase64[i] = base64.StdEncoding.EncodeToString(plaintext)
+	}
+
+	initResp.Keys = newKeys
+	initResp.KeysBase64 = newKeysBase64
+	initResp.EncryptedKeys = nil
+	initResp.Nonces = nil
+	return nil
+}
+
+// obtainAESKey obtain AES encryption key from KDF or returns error
+func (vc *VaultClient) obtainAESKey() ([]byte, error) {
+	kdfBin := vc.getKdfBin()
+	persistDir := Configuration.SecretService.TokenFolderPath
+	key, err := vc.pipedhexreader.ReadHexBytesFromExe(kdfBin, []string{PersistDirKdfOption, persistDir})
+	return key, err
+}
+
+// getKdfBin returns which KDF to run
+func (vc *VaultClient) getKdfBin() string {
+	kdfBin := os.Getenv("KDF_HOOK")
+	if kdfBin == "" {
+		kdfBin = defaultKdfExecutable
+	}
+	return kdfBin
 }

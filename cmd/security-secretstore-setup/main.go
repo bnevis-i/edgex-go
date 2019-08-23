@@ -28,6 +28,7 @@ import (
 	"github.com/edgexfoundry/edgex-go/internal"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/startup"
 	"github.com/edgexfoundry/edgex-go/internal/pkg/usage"
+	"github.com/edgexfoundry/edgex-go/internal/security/pipedhexreader"
 	"github.com/edgexfoundry/edgex-go/internal/security/secretstore"
 	"github.com/edgexfoundry/go-mod-core-contracts/clients/logger"
 	"github.com/edgexfoundry/go-mod-core-contracts/models"
@@ -65,10 +66,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	phr := pipedhexreader.NewPipedHexReader()
 	req := secretstore.NewRequestor(insecureSkipVerify)
 	vaultScheme := secretstore.Configuration.SecretService.Scheme
 	vaultHost := fmt.Sprintf("%s:%v", secretstore.Configuration.SecretService.Server, secretstore.Configuration.SecretService.Port)
-	vc := secretstore.NewVaultClient(req, vaultScheme, vaultHost)
+	vc := secretstore.NewVaultClient(phr, req, vaultScheme, vaultHost)
 	intervalDuration := time.Duration(waitInterval) * time.Second
 	loopExit := false
 
