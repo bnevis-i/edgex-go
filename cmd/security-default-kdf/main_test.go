@@ -46,40 +46,52 @@ func (testExit *testExitCode) getStatusCode() int {
 	return testExit.testStatusCode
 }
 
-var oldArgs []string
-var oldStdout, oldStderr *os.File
-var stdoutReader, stdoutWriter *os.File
-var stderrReader, stderrWriter *os.File
-var stdoutCapture, stderrCapture bytes.Buffer
+// WcaptureWrapper wraps a lambda function to preseve os.Args and capture (and return stdin and stdout)
+func captureWrapper(t *testing.T, delegate func(t *testing.T) error) (bytes.Buffer, bytes.Buffer, error) {
+	var oldArgs []string
+	var oldStdout, oldStderr *os.File
+	var stdoutReader, stdoutWriter *os.File
+	var stderrReader, stderrWriter *os.File
+	var stdoutCapture, stderrCapture bytes.Buffer
 
-func setUp(t *testing.T) {
-	exitInstance = newTestExit()
-	oldArgs, oldStdout, oldStderr = os.Args, os.Stdout, os.Stderr
-	stdoutReader, stdoutWriter, _ = os.Pipe()
-	stderrReader, stderrWriter, _ = os.Pipe()
-	os.Stdout, os.Stderr = stdoutWriter, stderrWriter
-	stdoutCapture.Reset()
-	stderrCapture.Reset()
-}
+	var preFunc = func(t *testing.T) {
+		exitInstance = newTestExit()
+		oldArgs, oldStdout, oldStderr = os.Args, os.Stdout, os.Stderr
+		stdoutReader, stdoutWriter, _ = os.Pipe()
+		stderrReader, stderrWriter, _ = os.Pipe()
+		os.Stdout, os.Stderr = stdoutWriter, stderrWriter
+		stdoutCapture.Reset()
+		stderrCapture.Reset()
+	}
+	var postFunc = func(t *testing.T) {
+		stdoutWriter.Close()
+		stderrWriter.Close()
+		io.Copy(&stdoutCapture, stdoutReader)
+		io.Copy(&stderrCapture, stderrReader)
+		os.Args, os.Stdout, os.Stderr = oldArgs, oldStdout, oldStderr
+	}
 
-func tearDown(t *testing.T) {
-	stdoutWriter.Close()
-	stderrWriter.Close()
-	io.Copy(&stdoutCapture, stdoutReader)
-	io.Copy(&stderrCapture, stderrReader)
-	os.Args, os.Stdout, os.Stderr = oldArgs, oldStdout, oldStderr
+	lambda := func(t *testing.T) error {
+		preFunc(t)
+		defer postFunc(t)
+		err := delegate(t)
+		return err
+	}
+
+	err := lambda(t)
+	return stdoutCapture, stderrCapture, err
 }
 
 func TestNoOption(t *testing.T) {
 	assert := assert.New(t)
 
-	setUp(t)
+	_, stderrCapture, err := captureWrapper(t, func(t *testing.T) error {
+		os.Args = []string{"cmd"}
+		main()
+		return nil
+	})
 
-	os.Args = []string{"cmd"}
-	main()
-
-	tearDown(t)
-
+	assert.Nil(err)
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
 	assert.Equal("ERROR: -persistdir is a required option\n", stderrCapture.String())
 }
@@ -87,13 +99,13 @@ func TestNoOption(t *testing.T) {
 func TestBadHalg(t *testing.T) {
 	assert := assert.New(t)
 
-	setUp(t)
+	_, stderrCapture, err := captureWrapper(t, func(t *testing.T) error {
+		os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha1"}
+		main()
+		return nil
+	})
 
-	os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha1"}
-	main()
-
-	tearDown(t)
-
+	assert.Nil(err)
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
 	assert.Equal("ERROR: -hashalg must be \"sha256\"\n", stderrCapture.String())
 }
@@ -101,13 +113,13 @@ func TestBadHalg(t *testing.T) {
 func TestNoInfo(t *testing.T) {
 	assert := assert.New(t)
 
-	setUp(t)
+	_, stderrCapture, err := captureWrapper(t, func(t *testing.T) error {
+		os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha256"}
+		main()
+		return nil
+	})
 
-	os.Args = []string{"cmd", "-persistdir", ".", "-hashalg", "sha256"}
-	main()
-
-	tearDown(t)
-
+	assert.Nil(err)
 	assert.Equal(1, (exitInstance.(*testExitCode)).getStatusCode())
 	assert.Equal("ERROR: An \"info\" argument is required as input to the KDF\n", stderrCapture.String())
 }
@@ -117,22 +129,19 @@ func TestNoInfo(t *testing.T) {
 func TestNoError(t *testing.T) {
 	assert := assert.New(t)
 
-	setUp(t)
-
 	mockedHexReader := &mockPipedHexReader{}
 	mockedKeyDeriver := &mockKeyDeriver{}
-
 	mockedHexReader.On("ReadHexBytesFromExe", "", []string{}).Return(make([]byte, 32), nil)
 	mockedKeyDeriver.On("DeriveKey", make([]byte, 32), uint(expectedKeyLen), expectedInfo).Return(hex.DecodeString(expectedOutputKey))
 
-	err := kdfExecutorArgs{mockedHexReader, mockedKeyDeriver, "", expectedKeyLen, expectedInfo}.outputDerivedKey(os.Stdout)
-
-	tearDown(t)
-
-	mockedHexReader.AssertExpectations(t)
-	mockedKeyDeriver.AssertExpectations(t)
+	stdoutCapture, _, err := captureWrapper(t, func(t *testing.T) error {
+		err := kdfExecutorArgs{mockedHexReader, mockedKeyDeriver, "", expectedKeyLen, expectedInfo}.outputDerivedKey(os.Stdout)
+		return err
+	})
 
 	assert.Nil(err)
+	mockedHexReader.AssertExpectations(t)
+	mockedKeyDeriver.AssertExpectations(t)
 	assert.Equal(expectedOutputKey, stdoutCapture.String())
 }
 
