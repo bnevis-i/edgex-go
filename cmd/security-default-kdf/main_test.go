@@ -46,7 +46,7 @@ func (testExit *testExitCode) getStatusCode() int {
 	return testExit.testStatusCode
 }
 
-// WcaptureWrapper wraps a lambda function to preseve os.Args and capture (and return stdin and stdout)
+// WcaptureWrapper wraps a lambda function to preserve os.Args and capture (and return) stdin and stdout
 func captureWrapper(t *testing.T, delegate func(t *testing.T) error) (bytes.Buffer, bytes.Buffer, error) {
 	var oldArgs []string
 	var oldStdout, oldStderr *os.File
@@ -96,7 +96,7 @@ func TestNoOption(t *testing.T) {
 	assert.Equal("ERROR: -persistdir is a required option\n", stderrCapture.String())
 }
 
-func TestBadHalg(t *testing.T) {
+func TestBadHashAlg(t *testing.T) {
 	assert := assert.New(t)
 
 	_, stderrCapture, err := captureWrapper(t, func(t *testing.T) error {
@@ -125,7 +125,7 @@ func TestNoInfo(t *testing.T) {
 }
 
 // TestNoError runs a mocked IKM and mocked KDF and
-// just makes sure submain() calls the right stuff
+// just makes sure outputDerviedKey() calls the right stuff
 func TestNoError(t *testing.T) {
 	assert := assert.New(t)
 

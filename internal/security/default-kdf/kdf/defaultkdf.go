@@ -75,18 +75,18 @@ func (kdf *defaultKdf) DeriveKey(ikm []byte, keyLen uint, info string) ([]byte, 
 func (kdf *defaultKdf) initializeSalt() ([]byte, error) {
 	salt := make([]byte, saltLength)
 	saltPath := path.Join(kdf.persistencePath, saltFile)
-	saltFile, err := kdf.fileOpener(saltPath, os.O_RDWR|os.O_CREATE, 0600)
+	saltFileObj, err := kdf.fileOpener(saltPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}
-	defer saltFile.Close()
-	nbytes, err := saltFile.Read(salt)
+	defer saltFileObj.Close()
+	nbytes, err := saltFileObj.Read(salt)
 	if nbytes == 0 || nbytes != saltLength {
 		_, err := rand.Read(salt)
 		if err != nil {
 			return nil, err
 		}
-		nwritten, err := saltFile.WriteAt(salt, 0)
+		nwritten, err := saltFileObj.WriteAt(salt, 0)
 		if err != nil || nwritten != len(salt) {
 			return nil, err
 		}
