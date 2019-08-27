@@ -45,6 +45,7 @@ func main() {
 	var waitInterval int
 	var useProfile string
 	var useRegistry bool
+	var allowVmkEncryptionUpgrade bool
 
 	flag.BoolVar(&initNeeded, "init", false, "run init procedure for security service.")
 	flag.BoolVar(&insecureSkipVerify, "insureskipverify", true, "skip server side SSL verification, mainly for self-signed cert.")
@@ -54,6 +55,7 @@ func main() {
 	flag.BoolVar(&useRegistry, "r", false, "Indicates the service should use registry service.")
 	flag.StringVar(&useProfile, "profile", "", "Specify a profile other than default.")
 	flag.StringVar(&useProfile, "p", "", "Specify a profile other than default.")
+	flag.BoolVar(&allowVmkEncryptionUpgrade, "allow-vmk-encryption-upgrade", false, "Allow encryption to be added to an existing Vault master key file.")
 
 	flag.Usage = usage.HelpCallbackSecuritySecretStore
 	flag.Parse()
@@ -73,6 +75,14 @@ func main() {
 	vc := secretstore.NewVaultClient(phr, req, vaultScheme, vaultHost)
 	intervalDuration := time.Duration(waitInterval) * time.Second
 	loopExit := false
+
+	if allowVmkEncryptionUpgrade {
+		err := vc.UpgradeVaultMasterKeyEncryption()
+		if err != nil {
+			secretstore.LoggingClient.Error("Failed to upgrade Vault master key encryption")
+			os.Exit(1)
+		}
+	}
 
 	for {
 		sCode, _ := vc.HealthCheck()

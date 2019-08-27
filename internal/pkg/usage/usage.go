@@ -72,6 +72,7 @@ Server Options:
 	--init=true/false				Indicates if security service should be initialized	
 	--configfile=<file.toml>			Use a different config file (default: res/configuration.toml)
 	--wait=<time in seconds>		Indicates how long the program will pause between the vault initialization until it succeeds	
+	--allow-vmk-encryption-upgrade=true/false	Allow encryption to be added to an existing Vault master key file
 	Common Options:
 	-h, --help					Show this message
 `

@@ -242,6 +242,53 @@ func (vc *VaultClient) Unseal() (statusCode int, err error) {
 	return 0, fmt.Errorf("%d", 1)
 }
 
+// UpgradeVaultMasterKeyEncryption checks to see if the existing vault master key
+// is encrypted, and if found unencrypted, will encrypt and save it.
+func (vc *VaultClient) UpgradeVaultMasterKeyEncryption() (err error) {
+	LoggingClient.Info(fmt.Sprintf("Checking for unencrypted vault master key (will upgrade)"))
+
+	initResp := InitResponse{}
+	vmkPath := filepath.Join(Configuration.SecretService.TokenFolderPath, Configuration.SecretService.TokenFile)
+	rawBytes, err := ioutil.ReadFile(vmkPath)
+	if err != nil {
+		LoggingClient.Info(fmt.Sprintf("Vault master key not found; nothing to do: %s", vmkPath))
+		return nil //no error
+	}
+
+	if err = json.Unmarshal(rawBytes, &initResp); err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to build the JSON structure from the init response body: %s", err.Error()))
+		return err
+	}
+
+	var encryptedConfig = (initResp.KeysBase64 == nil)
+
+	if encryptedConfig {
+		LoggingClient.Info(fmt.Sprintf("Vault master key already encrypted; nothing to do: %s", vmkPath))
+		return nil //no error
+	}
+
+	err = vc.encryptVaultMasterKey(&initResp)
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed encrypt vault master key %s", err.Error()))
+		return err
+	}
+
+	remarshaledBody, err := json.Marshal(initResp)
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed remarshal JSON body %s", err.Error()))
+		return err
+	}
+
+	err = ioutil.WriteFile(vmkPath, remarshaledBody, 0600)
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to save %s file, Error is: %s", vmkPath, err.Error()))
+		return err
+	}
+
+	LoggingClient.Info("Vault master key encryption upgrade complete.")
+	return nil
+}
+
 // Use a derived key to encrypt Keys and save as EncryptedKeysBase64
 func (vc *VaultClient) encryptVaultMasterKey(initResp *InitResponse) error {
 

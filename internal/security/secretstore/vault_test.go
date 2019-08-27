@@ -17,8 +17,11 @@ package secretstore
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -116,6 +119,46 @@ func TestUnseal(t *testing.T) {
 	code, err := vc.Unseal()
 	if code != http.StatusOK {
 		t.Errorf("incorrect vault unseal status. The returned code is %d, %s", code, err.Error())
+	}
+}
+
+func TestUpgradeVaultMasterKeyEncryption(t *testing.T) {
+	LoggingClient = logger.MockLogger{}
+
+	Configuration = &ConfigurationStruct{}
+	Configuration.SecretService = SecretServiceInfo{
+		TokenFolderPath:   "testdata",
+		TokenFile:         "test-resp-init.json",
+		VaultSecretShares: 1,
+	}
+
+	golden, err := os.Open(path.Join(Configuration.SecretService.TokenFolderPath,
+		"test-resp-init-unencrypted.json"))
+	if err != nil {
+		t.Errorf("failed top open json template: %s", err.Error())
+		t.FailNow()
+	}
+	defer golden.Close()
+
+	testdata, err := os.OpenFile(path.Join(Configuration.SecretService.TokenFolderPath,
+		Configuration.SecretService.TokenFile),
+		os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		t.Errorf("failed top open json target: %s", err.Error())
+		t.FailNow()
+	}
+	defer testdata.Close()
+
+	_, err = io.Copy(testdata, golden)
+	if err != nil {
+		t.Errorf("failed copy json contents: %s", err.Error())
+		t.FailNow()
+	}
+	vc := NewVaultClient(newMockPipedHexReader(), nil, "https", "")
+	err = vc.UpgradeVaultMasterKeyEncryption()
+	if err != nil {
+		t.Errorf("UpgradeVaultMasterKeyEncryption failed: %s", err.Error())
+		t.FailNow()
 	}
 }
 
