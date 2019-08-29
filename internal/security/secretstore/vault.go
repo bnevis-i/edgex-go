@@ -47,6 +47,7 @@ type InitResponse struct {
 	KeysBase64    []string `json:"keys_base64"`
 	EncryptedKeys []string `json:"encrypted_keys"`
 	Nonces        []string `json:"nonces"`
+	Ivs           []string `json:"ivs"`
 	RootToken     string   `json:"root_token"`
 }
 
@@ -145,7 +146,7 @@ func (vc *VaultClient) Init() (statusCode int, err error) {
 		return 0, err
 	}
 
-	err = vc.encryptVaultMasterKey(&initResp)
+	err = vc.encryptVaultMasterKeyCTR(&initResp)
 	if err != nil {
 		LoggingClient.Error(fmt.Sprintf("failed encrypt vault master key %s", err.Error()))
 		return 0, err
@@ -190,7 +191,7 @@ func (vc *VaultClient) Unseal() (statusCode int, err error) {
 	var encryptedConfig = (initResp.KeysBase64 == nil)
 
 	if encryptedConfig {
-		err = vc.decryptVaultMasterKey(&initResp)
+		err = vc.decryptVaultMasterKeyCTR(&initResp)
 		if err != nil {
 			LoggingClient.Error(fmt.Sprintf("failed decrypt vault master key %s", err.Error()))
 			return 0, err
@@ -267,7 +268,7 @@ func (vc *VaultClient) UpgradeVaultMasterKeyEncryption() (err error) {
 		return nil //no error
 	}
 
-	err = vc.encryptVaultMasterKey(&initResp)
+	err = vc.encryptVaultMasterKeyCTR(&initResp)
 	if err != nil {
 		LoggingClient.Error(fmt.Sprintf("failed encrypt vault master key %s", err.Error()))
 		return err
@@ -289,14 +290,118 @@ func (vc *VaultClient) UpgradeVaultMasterKeyEncryption() (err error) {
 	return nil
 }
 
+func wipeKey(key []byte) {
+	blank := make([]byte, len(key))
+	copy(key, blank)
+}
+
 // Use a derived key to encrypt Keys and save as EncryptedKeysBase64
-func (vc *VaultClient) encryptVaultMasterKey(initResp *InitResponse) error {
+func (vc *VaultClient) encryptVaultMasterKeyCTR(initResp *InitResponse) error {
 
 	key, err := vc.obtainAESKey()
 	if err != nil {
 		LoggingClient.Error(fmt.Sprintf("failed to obtain encryption key %s", err.Error()))
 		return err
 	}
+	defer wipeKey(key)
+
+	newKeys := make([]string, len(initResp.Keys))
+	newIvs := make([]string, len(initResp.Keys))
+
+	for i, hexPlaintext := range initResp.Keys {
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize block cipher %s", err.Error()))
+			return err
+		}
+
+		iv := make([]byte, block.BlockSize())
+		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize random IV %s", err.Error()))
+			return err
+		}
+
+		plaintext, err := hex.DecodeString(hexPlaintext)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of keyshare (details omitted)"))
+			return err
+		}
+
+		ciphertext := make([]byte, len(plaintext))
+		stream := cipher.NewCTR(block, iv) // will panic if error
+		stream.XORKeyStream(ciphertext, plaintext)
+
+		newKeys[i] = hex.EncodeToString(ciphertext)
+		newIvs[i] = hex.EncodeToString(iv)
+	}
+
+	initResp.EncryptedKeys = newKeys
+	initResp.Ivs = newIvs
+	initResp.Keys = nil       // strings are immutable, must wait for GC
+	initResp.KeysBase64 = nil // strings are immutable, must wait for GC
+	return nil
+}
+
+// Use a derived key to decrypt EncryptedKeysBase64 and resore Keys and
+// EncryptedKeysBase64 to be fed back to the Vault unseal API
+func (vc *VaultClient) decryptVaultMasterKeyCTR(initResp *InitResponse) error {
+
+	key, err := vc.obtainAESKey()
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to obtain decryption key %s", err.Error()))
+		return err
+	}
+	defer wipeKey(key)
+
+	newKeys := make([]string, len(initResp.EncryptedKeys))
+	newKeysBase64 := make([]string, len(initResp.EncryptedKeys))
+
+	for i, hexCiphertext := range initResp.EncryptedKeys {
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to initialize block cipher %s", err.Error()))
+			return err
+		}
+
+		hexIv := initResp.Ivs[i]
+		iv, err := hex.DecodeString(hexIv)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of IV %s", err.Error()))
+			return err
+		}
+
+		ciphertext, err := hex.DecodeString(hexCiphertext)
+		if err != nil {
+			LoggingClient.Error(fmt.Sprintf("failed to decode hex bytes of ciphertext"))
+			return err
+		}
+
+		plaintext := make([]byte, len(ciphertext))
+		stream := cipher.NewCTR(block, iv) // will panic if error
+		stream.XORKeyStream(plaintext, ciphertext)
+
+		newKeys[i] = hex.EncodeToString(plaintext)
+		newKeysBase64[i] = base64.StdEncoding.EncodeToString(plaintext)
+	}
+
+	initResp.Keys = newKeys
+	initResp.KeysBase64 = newKeysBase64
+	initResp.EncryptedKeys = nil
+	initResp.Ivs = nil
+	return nil
+}
+
+// Use a derived key to encrypt Keys and save as EncryptedKeysBase64
+func (vc *VaultClient) encryptVaultMasterKeyGCM(initResp *InitResponse) error {
+
+	key, err := vc.obtainAESKey()
+	if err != nil {
+		LoggingClient.Error(fmt.Sprintf("failed to obtain encryption key %s", err.Error()))
+		return err
+	}
+	defer wipeKey(key)
 
 	newKeys := make([]string, len(initResp.Keys))
 	newNonces := make([]string, len(initResp.Keys))
@@ -335,20 +440,21 @@ func (vc *VaultClient) encryptVaultMasterKey(initResp *InitResponse) error {
 
 	initResp.EncryptedKeys = newKeys
 	initResp.Nonces = newNonces
-	initResp.Keys = nil
-	initResp.KeysBase64 = nil
+	initResp.Keys = nil       // strings are immutable, must wait for GC
+	initResp.KeysBase64 = nil // strings are immutable, must wait for GC
 	return nil
 }
 
 // Use a derived key to decrypt EncryptedKeysBase64 and resore Keys and
 // EncryptedKeysBase64 to be fed back to the Vault unseal API
-func (vc *VaultClient) decryptVaultMasterKey(initResp *InitResponse) error {
+func (vc *VaultClient) decryptVaultMasterKeyGCM(initResp *InitResponse) error {
 
 	key, err := vc.obtainAESKey()
 	if err != nil {
 		LoggingClient.Error(fmt.Sprintf("failed to obtain decryption key %s", err.Error()))
 		return err
 	}
+	defer wipeKey(key)
 
 	newKeys := make([]string, len(initResp.EncryptedKeys))
 	newKeysBase64 := make([]string, len(initResp.EncryptedKeys))
