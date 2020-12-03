@@ -7,7 +7,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/edgexfoundry/go-mod-bootstrap v0.0.57
 	github.com/edgexfoundry/go-mod-configuration v0.0.8
-	github.com/edgexfoundry/go-mod-core-contracts v0.1.112
+	github.com/edgexfoundry/go-mod-core-contracts v0.1.120
 	github.com/edgexfoundry/go-mod-messaging v0.1.28
 	github.com/edgexfoundry/go-mod-registry v0.1.26
 	github.com/edgexfoundry/go-mod-secrets v0.0.26
@@ -22,7 +22,7 @@ require (
 	github.com/stretchr/testify v1.5.1
 	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
 	gopkg.in/eapache/queue.v1 v1.1.0
-	gopkg.in/yaml.v2 v2.3.0
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 go 1.15
